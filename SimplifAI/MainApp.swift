@@ -2,7 +2,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 import FoundationModels
 import PDFKit
+import PhotosUI
 import SwiftData
+import UIKit
+import Vision
 
 struct ContentView: View {
     private let contentWidth: CGFloat = 640
@@ -21,6 +24,9 @@ struct ContentView: View {
     @State private var notesText: String = ""
     @State private var summaryBullets: [String] = []
     @State private var showingFileImporter = false
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var showingPhotoPicker = false
+    @State private var showingCamera = false
     @State private var importedFileName = "No file selected"
     @State private var importedPreviewText = ""
     @State private var isLoading = false
@@ -154,6 +160,9 @@ struct ContentView: View {
                                 }
                                 .pickerStyle(.segmented)
 
+                                Spacer()
+                                    .frame(height: 8)
+
                                 settingsSectionTitle("Accessibility")
 
                                 Toggle(isOn: $preferLargeText) {
@@ -171,6 +180,21 @@ struct ContentView: View {
                                     )
                                 }
                                 .tint(primaryAccent)
+
+                                Spacer()
+                                    .frame(height: 8)
+
+                                settingsSectionTitle("App Info")
+
+                                settingsRow(
+                                    title: "Version",
+                                    detail: appVersionDescription
+                                )
+
+                                settingsRow(
+                                    title: "Made By",
+                                    detail: "Khalid Alenizy"
+                                )
                             }
                         }
                     }
@@ -187,12 +211,25 @@ struct ContentView: View {
         ) { result in
             loadImportedFile(from: result)
         }
+        .photosPicker(
+            isPresented: $showingPhotoPicker,
+            selection: $selectedPhotoItem,
+            matching: .images
+        )
+        .task(id: selectedPhotoItem) {
+            await loadSelectedPhoto()
+        }
+        .sheet(isPresented: $showingCamera) {
+            CameraPicker { image in
+                loadCapturedImage(image)
+            }
+        }
         .preferredColorScheme(preferredColorScheme)
         .dynamicTypeSize(preferLargeText ? .large ... .accessibility1 : .xSmall ... .xxxLarge)
     }
 
     private var supportedContentTypes: [UTType] {
-        var contentTypes: [UTType] = [.plainText, .utf8PlainText, .rtf, .pdf]
+        var contentTypes: [UTType] = [.plainText, .utf8PlainText, .rtf, .pdf, .image]
 
         if let markdownType = UTType(filenameExtension: "md") {
             contentTypes.append(markdownType)
@@ -304,10 +341,24 @@ struct ContentView: View {
                 .foregroundStyle(cardTextColor)
 
             HStack(spacing: 12) {
-                Button(action: {
-                    showingFileImporter = true
-                }) {
-                    importButtonLabel
+                Menu {
+                    Button {
+                        showingFileImporter = true
+                    } label: {
+                        Label("Choose File", systemImage: "doc.badge.plus")
+                    }
+
+                    Button {
+                        showingPhotoPicker = true
+                    } label: {
+                        Label("Photos", systemImage: "photo.on.rectangle")
+                    }
+
+                    Button(action: openCamera) {
+                        Label("Camera", systemImage: "camera")
+                    }
+                } label: {
+                    importButtonLabel("Import", systemImage: "square.and.arrow.down")
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -316,12 +367,10 @@ struct ContentView: View {
                         .foregroundStyle(cardTextColor)
                         .lineLimit(1)
 
-                    Text("Supports plain text, markdown, rich text, and PDF.")
+                    Text("Supports plain text, markdown, rich text, PDF, and images.")
                         .font(.footnote)
                         .foregroundStyle(cardSecondaryTextColor)
                 }
-
-                Spacer()
             }
         }
     }
@@ -615,8 +664,8 @@ struct ContentView: View {
         .modifier(HeaderGlassModifier())
     }
 
-    private var importButtonLabel: some View {
-        Label("Choose File", systemImage: "doc.badge.plus")
+    private func importButtonLabel(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
             .fontWeight(.semibold)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -684,6 +733,12 @@ struct ContentView: View {
         currentWordCount > maximumSummaryWordCount
     }
 
+    private var appVersionDescription: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown"
+        return "Version \(version) (\(build))"
+    }
+
     private func loadImportedFile(from result: Result<URL, Error>) {
         do {
             let fileURL = try result.get()
@@ -707,26 +762,179 @@ struct ContentView: View {
         }
     }
 
-    private func extractText(from fileURL: URL) throws -> String {
-        if fileURL.pathExtension.lowercased() == "pdf" {
-            guard let document = PDFDocument(url: fileURL) else {
+    @MainActor
+    private func loadSelectedPhoto() async {
+        guard let selectedPhotoItem else {
+            return
+        }
+
+        defer {
+            self.selectedPhotoItem = nil
+        }
+
+        do {
+            guard let data = try await selectedPhotoItem.loadTransferable(type: Data.self) else {
+                throw CocoaError(.fileReadUnknown)
+            }
+
+            guard
+                let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
+                let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
+            else {
                 throw CocoaError(.fileReadCorruptFile)
             }
 
-            let extractedText = (0..<document.pageCount)
-                .compactMap { document.page(at: $0)?.string }
-                .joined(separator: "\n")
+            let extractedText = try recognizedText(from: cgImage)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
             guard !extractedText.isEmpty else {
                 throw CocoaError(.fileReadInapplicableStringEncoding)
             }
 
-            return extractedText
+            notesText = extractedText
+            importedPreviewText = extractedText
+            importedFileName = "Photo Library Image"
+            errorMessage = nil
+        } catch {
+            importedFileName = "Could not import image"
+            importedPreviewText = ""
+            errorMessage = "The selected photo could not be read as text."
+        }
+    }
+
+    private func openCamera() {
+        guard hasUsageDescription(for: "NSCameraUsageDescription") else {
+            errorMessage = "Camera access is not configured for this app yet."
+            return
+        }
+
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            errorMessage = "This device does not have an available camera."
+            return
+        }
+
+        showingCamera = true
+    }
+
+    private func hasUsageDescription(for key: String) -> Bool {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String else {
+            return false
+        }
+
+        return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func loadCapturedImage(_ image: UIImage) {
+        guard let cgImage = image.cgImage else {
+            errorMessage = "The captured image could not be processed."
+            return
+        }
+
+        do {
+            let extractedText = try recognizedText(from: cgImage)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard !extractedText.isEmpty else {
+                throw CocoaError(.fileReadInapplicableStringEncoding)
+            }
+
+            notesText = extractedText
+            importedPreviewText = extractedText
+            importedFileName = "Camera Capture"
+            errorMessage = nil
+        } catch {
+            importedFileName = "Could not import image"
+            importedPreviewText = ""
+            errorMessage = "The captured image did not contain readable text."
+        }
+    }
+
+    private func extractText(from fileURL: URL) throws -> String {
+        if fileURL.pathExtension.lowercased() == "pdf" {
+            return try extractTextFromPDF(at: fileURL)
+        }
+
+        if let contentType = UTType(filenameExtension: fileURL.pathExtension.lowercased()),
+           contentType.conforms(to: .image) {
+            return try extractTextFromImage(at: fileURL)
         }
 
         let fileData = try Data(contentsOf: fileURL)
         return try decodeImportedText(from: fileData)
+    }
+
+    private func extractTextFromPDF(at fileURL: URL) throws -> String {
+        guard let document = PDFDocument(url: fileURL) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+
+        let extractedText = (0..<document.pageCount)
+            .compactMap { document.page(at: $0)?.string }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !extractedText.isEmpty {
+            return extractedText
+        }
+
+        let ocrText = try (0..<document.pageCount)
+            .compactMap { document.page(at: $0) }
+            .map(recognizedText(from:))
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !ocrText.isEmpty else {
+            throw CocoaError(.fileReadInapplicableStringEncoding)
+        }
+
+        return ocrText
+    }
+
+    private func extractTextFromImage(at fileURL: URL) throws -> String {
+        guard
+            let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
+            let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
+        else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+
+        let extractedText = try recognizedText(from: cgImage)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !extractedText.isEmpty else {
+            throw CocoaError(.fileReadInapplicableStringEncoding)
+        }
+
+        return extractedText
+    }
+
+    private func recognizedText(from page: PDFPage) throws -> String {
+        let pageBounds = page.bounds(for: .mediaBox)
+        let renderSize = CGSize(
+            width: max(pageBounds.width * 2, 1200),
+            height: max(pageBounds.height * 2, 1600)
+        )
+        let renderedImage = page.thumbnail(of: renderSize, for: .mediaBox)
+
+        guard let cgImage = renderedImage.cgImage else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+
+        return try recognizedText(from: cgImage)
+    }
+
+    private func recognizedText(from cgImage: CGImage) throws -> String {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+
+        let handler = VNImageRequestHandler(cgImage: cgImage)
+        try handler.perform([request])
+
+        let observations = request.results ?? []
+        return observations
+            .compactMap { $0.topCandidates(1).first?.string }
+            .joined(separator: "\n")
     }
 
     private func decodeImportedText(from data: Data) throws -> String {
@@ -888,11 +1096,76 @@ private struct ImportButtonGlassModifier: ViewModifier {
     }
 }
 
+private struct CameraPicker: UIViewControllerRepresentable {
+    let onImagePicked: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onImagePicked: onImagePicked, dismiss: dismiss)
+    }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.cameraCaptureMode = .photo
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        private let onImagePicked: (UIImage) -> Void
+        private let dismiss: DismissAction
+
+        init(onImagePicked: @escaping (UIImage) -> Void, dismiss: DismissAction) {
+            self.onImagePicked = onImagePicked
+            self.dismiss = dismiss
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            dismiss()
+        }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            if let image = info[.originalImage] as? UIImage {
+                onImagePicked(image)
+            }
+            dismiss()
+        }
+    }
+}
+
 private struct OnDeviceSummaryAI {
     private let unsupportedInputMarker = "NO_SUMMARY"
+    private let chunkWordLimit = 220
+    private let finalBulletLimit = 6
 
     @available(iOS 26.0, *)
     func summariseNotes(notes: String) async throws -> [String] {
+        let chunks = noteChunks(from: notes)
+
+        if chunks.count == 1 {
+            return try await summariseChunk(chunks[0])
+        }
+
+        let partialSummaries = try await summariseChunks(chunks)
+        let mergedSummaryInput = partialSummaries
+            .enumerated()
+            .map { index, bullets in
+                let body = bullets.map { "- \($0)" }.joined(separator: "\n")
+                return "Section \(index + 1):\n\(body)"
+            }
+            .joined(separator: "\n\n")
+
+        return try await mergeSummaries(mergedSummaryInput)
+    }
+
+    @available(iOS 26.0, *)
+    private func summariseChunk(_ notes: String) async throws -> [String] {
         let instructions = """
         You are a text simplifier, not a chatbot.
         Your only job is to simplify and summarise note-like text into short factual bullet points.
@@ -920,11 +1193,87 @@ private struct OnDeviceSummaryAI {
             throw SummaryError(message: "Please enter valid notes or files.")
         }
 
-        let limitedBullets = Array(bullets[0..<min(bullets.count, 6)])
+        let limitedBullets = Array(bullets[0..<min(bullets.count, finalBulletLimit)])
         if limitedBullets.isEmpty {
             throw SummaryError(message: "Please enter valid notes or files.")
         }
         return limitedBullets
+    }
+
+    @available(iOS 26.0, *)
+    private func summariseChunks(_ chunks: [String]) async throws -> [[String]] {
+        var summaries: [[String]] = []
+        summaries.reserveCapacity(chunks.count)
+
+        for chunk in chunks {
+            summaries.append(try await summariseChunk(chunk))
+        }
+
+        return summaries
+    }
+
+    @available(iOS 26.0, *)
+    private func mergeSummaries(_ summaryText: String) async throws -> [String] {
+        let instructions = """
+        Merge the provided section summaries into one short final summary.
+        Return only concise factual bullet points.
+        Remove duplicates and keep the most important points only.
+        Do not add new information.
+        """
+
+        let session = LanguageModelSession(instructions: instructions)
+        let response: LanguageModelSession.Response<String>
+        do {
+            response = try await session.respond(to: summaryText)
+        } catch let error as LanguageModelSession.GenerationError {
+            throw try await SummaryError(generationError: error)
+        }
+
+        let bullets = response.content
+            .split(whereSeparator: \.isNewline)
+            .map(Self.cleanedBulletLine)
+            .filter { !$0.isEmpty }
+
+        let limitedBullets = Array(bullets[0..<min(bullets.count, finalBulletLimit)])
+        if limitedBullets.isEmpty {
+            throw SummaryError(message: "The model could not produce a merged summary.")
+        }
+
+        return limitedBullets
+    }
+
+    private func noteChunks(from notes: String) -> [String] {
+        let lines = notes
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !lines.isEmpty else {
+            return [notes]
+        }
+
+        var chunks: [String] = []
+        var currentLines: [String] = []
+        var currentWordCount = 0
+
+        for line in lines {
+            let lineWordCount = line.split(whereSeparator: \.isWhitespace).count
+
+            if !currentLines.isEmpty, currentWordCount + lineWordCount > chunkWordLimit {
+                chunks.append(currentLines.joined(separator: "\n"))
+                currentLines.removeAll(keepingCapacity: true)
+                currentWordCount = 0
+            }
+
+            currentLines.append(line)
+            currentWordCount += lineWordCount
+        }
+
+        if !currentLines.isEmpty {
+            chunks.append(currentLines.joined(separator: "\n"))
+        }
+
+        return chunks.isEmpty ? [notes] : chunks
     }
 
     private static func cleanedBulletLine(_ line: Substring) -> String {
