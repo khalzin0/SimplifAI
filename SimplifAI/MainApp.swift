@@ -5,6 +5,10 @@ import PDFKit
 
 struct ContentView: View {
     private let maximumSummaryWordCount = 3_000
+    @AppStorage("appAppearance") private var appAppearanceRawValue = AppAppearance.system.rawValue
+    @AppStorage("preferLargeText") private var preferLargeText = false
+    @AppStorage("reduceVisualEffects") private var reduceVisualEffects = false
+    @Environment(\.colorScheme) private var colorScheme
     @State private var selectedTab: AppTab = .summarise
     @State private var notesText: String = ""
     @State private var summaryBullets: [String] = []
@@ -14,11 +18,28 @@ struct ContentView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @FocusState private var isNotesEditorFocused: Bool
-
+    
     private let primaryAccent = Color(red: 0.08, green: 0.36, blue: 0.67)
     private let secondaryAccent = Color(red: 0.17, green: 0.63, blue: 0.77)
-    private let cardTextColor = Color(red: 0.14, green: 0.18, blue: 0.24)
-    private let cardSecondaryTextColor = Color(red: 0.39, green: 0.45, blue: 0.54)
+    private var selectedAppearance: AppAppearance {
+        AppAppearance(rawValue: appAppearanceRawValue) ?? .system
+    }
+    
+    private var preferredColorScheme: ColorScheme? {
+        selectedAppearance.colorScheme
+    }
+
+    private var cardTextColor: Color {
+        isDarkModeActive ? Color(red: 0.92, green: 0.95, blue: 0.98) : Color(red: 0.14, green: 0.18, blue: 0.24)
+    }
+
+    private var cardSecondaryTextColor: Color {
+        isDarkModeActive ? Color(red: 0.68, green: 0.74, blue: 0.82) : Color(red: 0.39, green: 0.45, blue: 0.54)
+    }
+
+    private var isDarkModeActive: Bool {
+        colorScheme == .dark
+    }
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -114,6 +135,62 @@ struct ContentView: View {
                 Label("Guide", systemImage: "book.pages")
             }
             .tag(AppTab.guide)
+
+            NavigationStack {
+                ZStack {
+                    backgroundView
+
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            Text("Settings")
+                                .font(.system(size: 34, weight: .bold, design: .rounded))
+                                .foregroundStyle(cardTextColor)
+
+                            Text("Choose the app appearance and accessibility preferences.")
+                                .font(.subheadline)
+                                .foregroundStyle(cardSecondaryTextColor)
+
+                            VStack(alignment: .leading, spacing: 18) {
+                                settingsSectionTitle("Appearance")
+
+                                Picker("Appearance", selection: $appAppearanceRawValue) {
+                                    ForEach(AppAppearance.allCases) { appearance in
+                                        Text(appearance.title).tag(appearance.rawValue)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+
+                                settingsSectionTitle("Accessibility")
+
+                                Toggle(isOn: $preferLargeText) {
+                                    settingsRow(
+                                        title: "Larger Text",
+                                        detail: "Uses a larger dynamic type size throughout the app."
+                                    )
+                                }
+                                .tint(primaryAccent)
+
+                                Toggle(isOn: $reduceVisualEffects) {
+                                    settingsRow(
+                                        title: "Reduce Visual Effects",
+                                        detail: "Uses a calmer background with less visual layering."
+                                    )
+                                }
+                                .tint(primaryAccent)
+                            }
+                            .padding(22)
+                            .background(mainPanelBackground)
+                        }
+                        .frame(maxWidth: 640)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 28)
+                    }
+                }
+            }
+            .tabItem {
+                Label("Settings", systemImage: "gearshape")
+            }
+            .tag(AppTab.settings)
         }
         .fileImporter(
             isPresented: $showingFileImporter,
@@ -121,6 +198,8 @@ struct ContentView: View {
         ) { result in
             loadImportedFile(from: result)
         }
+        .preferredColorScheme(preferredColorScheme)
+        .dynamicTypeSize(preferLargeText ? .large ... .accessibility1 : .xSmall ... .xxxLarge)
     }
 
     private var supportedContentTypes: [UTType] {
@@ -137,33 +216,35 @@ struct ContentView: View {
         ZStack {
             LinearGradient(
                 colors: [
-                    Color(red: 0.89, green: 0.94, blue: 1.0),
-                    Color(red: 0.95, green: 0.98, blue: 1.0),
-                    Color(red: 0.98, green: 0.99, blue: 1.0)
+                    isDarkModeActive ? Color(red: 0.06, green: 0.10, blue: 0.16) : Color(red: 0.89, green: 0.94, blue: 1.0),
+                    isDarkModeActive ? Color(red: 0.08, green: 0.14, blue: 0.21) : Color(red: 0.95, green: 0.98, blue: 1.0),
+                    isDarkModeActive ? Color(red: 0.10, green: 0.16, blue: 0.24) : Color(red: 0.98, green: 0.99, blue: 1.0)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
 
-            Circle()
-                .fill(secondaryAccent.opacity(0.22))
-                .frame(width: 320, height: 320)
-                .blur(radius: 36)
-                .offset(x: 180, y: -250)
+            if !reduceVisualEffects {
+                Circle()
+                    .fill(secondaryAccent.opacity(isDarkModeActive ? 0.18 : 0.22))
+                    .frame(width: 320, height: 320)
+                    .blur(radius: 36)
+                    .offset(x: 180, y: -250)
 
-            Circle()
-                .fill(primaryAccent.opacity(0.18))
-                .frame(width: 280, height: 280)
-                .blur(radius: 44)
-                .offset(x: -170, y: 260)
+                Circle()
+                    .fill(primaryAccent.opacity(isDarkModeActive ? 0.14 : 0.18))
+                    .frame(width: 280, height: 280)
+                    .blur(radius: 44)
+                    .offset(x: -170, y: 260)
 
-            RoundedRectangle(cornerRadius: 80, style: .continuous)
-                .fill(Color.white.opacity(0.38))
-                .frame(width: 260, height: 260)
-                .blur(radius: 34)
-                .rotationEffect(.degrees(18))
-                .offset(x: -120, y: -140)
+                RoundedRectangle(cornerRadius: 80, style: .continuous)
+                    .fill((isDarkModeActive ? Color.white : Color.white).opacity(isDarkModeActive ? 0.12 : 0.38))
+                    .frame(width: 260, height: 260)
+                    .blur(radius: 34)
+                    .rotationEffect(.degrees(18))
+                    .offset(x: -120, y: -140)
+            }
         }
     }
     
@@ -386,8 +467,8 @@ struct ContentView: View {
             .fill(
                 LinearGradient(
                     colors: [
-                        Color.white.opacity(0.88),
-                        Color(red: 0.96, green: 0.98, blue: 1.0).opacity(0.92)
+                        isDarkModeActive ? Color(red: 0.10, green: 0.14, blue: 0.20).opacity(0.94) : Color.white.opacity(0.88),
+                        isDarkModeActive ? Color(red: 0.12, green: 0.18, blue: 0.26).opacity(0.96) : Color(red: 0.96, green: 0.98, blue: 1.0).opacity(0.92)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -395,23 +476,23 @@ struct ContentView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(Color.white.opacity(0.7), lineWidth: 1)
+                    .stroke((isDarkModeActive ? primaryAccent : Color.white).opacity(isDarkModeActive ? 0.20 : 0.7), lineWidth: 1)
             )
             .shadow(color: primaryAccent.opacity(0.10), radius: 24, x: 0, y: 12)
     }
 
     private var editorBackground: some View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(Color.white.opacity(0.82))
+            .fill(isDarkModeActive ? Color.white.opacity(0.08) : Color.white.opacity(0.82))
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(primaryAccent.opacity(0.12), lineWidth: 1)
+                    .stroke(primaryAccent.opacity(isDarkModeActive ? 0.22 : 0.12), lineWidth: 1)
             )
     }
 
     private var statusBackground: some View {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(primaryAccent.opacity(0.09))
+            .fill(primaryAccent.opacity(isDarkModeActive ? 0.18 : 0.09))
     }
 
     private func guideCard(title: String, text: String) -> some View {
@@ -429,6 +510,22 @@ struct ContentView: View {
         .background(editorBackground)
     }
 
+    private func settingsSectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.headline)
+            .foregroundStyle(cardTextColor)
+    }
+
+    private func settingsRow(title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .foregroundStyle(cardTextColor)
+            Text(detail)
+                .font(.footnote)
+                .foregroundStyle(cardSecondaryTextColor)
+        }
+    }
+
     private func headerBadge(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title.uppercased())
@@ -443,10 +540,19 @@ struct ContentView: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white.opacity(0.58))
+                .fill(
+                    isDarkModeActive
+                    ? Color(red: 0.20, green: 0.26, blue: 0.36).opacity(0.88)
+                    : Color.white.opacity(0.58)
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.white.opacity(0.65), lineWidth: 1)
+                        .stroke(
+                            isDarkModeActive
+                            ? primaryAccent.opacity(0.28)
+                            : Color.white.opacity(0.65),
+                            lineWidth: 1
+                        )
                 )
         )
         .modifier(HeaderGlassModifier())
@@ -642,6 +748,37 @@ struct ContentView: View {
 private enum AppTab: Hashable {
     case summarise
     case guide
+    case settings
+}
+
+private enum AppAppearance: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system:
+            return "System"
+        case .light:
+            return "Light"
+        case .dark:
+            return "Dark"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system:
+            return nil
+        case .light:
+            return .light
+        case .dark:
+            return .dark
+        }
+    }
 }
 
 private struct HeaderGlassModifier: ViewModifier {
@@ -734,7 +871,7 @@ private struct OnDeviceSummaryAI {
             .filter { !$0.isEmpty }
 
         if bullets.count == 1, bullets[0].caseInsensitiveCompare(unsupportedInputMarker) == .orderedSame {
-            throw SummaryError(message: "Enter actual notes or text to simplify, not a chat message.")
+            throw SummaryError(message: "Please enter valid notes or files.")
         }
 
         let limitedBullets = Array(bullets[0..<min(bullets.count, 6)])
