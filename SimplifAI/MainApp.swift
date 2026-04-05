@@ -1,16 +1,19 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import FoundationModels
+import PDFKit
 
 struct ContentView: View {
+    private let maximumSummaryWordCount = 3_000
+    @State private var selectedTab: AppTab = .summarise
     @State private var notesText: String = ""
     @State private var summaryBullets: [String] = []
     @State private var showingFileImporter = false
     @State private var importedFileName = "No file selected"
+    @State private var importedPreviewText = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
     @FocusState private var isNotesEditorFocused: Bool
-    @State private var animateBackground = false
 
     private let primaryAccent = Color(red: 0.08, green: 0.36, blue: 0.67)
     private let secondaryAccent = Color(red: 0.17, green: 0.63, blue: 0.77)
@@ -18,103 +21,124 @@ struct ContentView: View {
     private let cardSecondaryTextColor = Color(red: 0.39, green: 0.45, blue: 0.54)
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                backgroundView
+        TabView(selection: $selectedTab) {
+            NavigationStack {
+                ZStack {
+                    backgroundView
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        headerSection
-                        importSection
-                        notesSection
-                        summariseButton
-                        if isLoading {
-                            loadingSection
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            headerSection
+                            VStack(alignment: .leading, spacing: 18) {
+                                importSection
+                                if !importedPreviewText.isEmpty {
+                                    importedPreviewSection
+                                }
+                                notesSection
+                                summariseButton
+                                if isLoading {
+                                    loadingSection
+                                }
+                                if let errorMessage {
+                                    errorSection(message: errorMessage)
+                                }
+                                summarySection
+                            }
+                            .padding(22)
+                            .background(mainPanelBackground)
                         }
-                        if let errorMessage {
-                            errorSection(message: errorMessage)
-                        }
-                        summarySection
+                        .frame(maxWidth: 640)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 28)
                     }
-                    .frame(maxWidth: 560)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 24)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    isNotesEditorFocused = false
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-
-                    Button("Done") {
+                    .contentShape(Rectangle())
+                    .onTapGesture {
                         isNotesEditorFocused = false
                     }
-                    .fontWeight(.semibold)
+                }
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+
+                        Button("Done") {
+                            isNotesEditorFocused = false
+                        }
+                        .fontWeight(.semibold)
+                    }
                 }
             }
+            .tabItem {
+                Label("Summarise", systemImage: "sparkles.rectangle.stack")
+            }
+            .tag(AppTab.summarise)
+
+            NavigationStack {
+                ZStack {
+                    backgroundView
+
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            Text("Guide")
+                                .font(.system(size: 34, weight: .bold, design: .rounded))
+                                .foregroundStyle(cardTextColor)
+
+                            Text("A quick reference for how this summariser works.")
+                                .font(.subheadline)
+                                .foregroundStyle(cardSecondaryTextColor)
+
+                            VStack(alignment: .leading, spacing: 16) {
+                                guideCard(
+                                    title: "Import",
+                                    text: "Bring in plain text, markdown, rich text, or PDF files. Imported text is loaded into the editor so you can review it first."
+                                )
+                                guideCard(
+                                    title: "Limit",
+                                    text: "The app summarises up to \(maximumSummaryWordCount) words at a time to avoid overflowing the on-device model context."
+                                )
+                                guideCard(
+                                    title: "Output",
+                                    text: "Summaries are generated as short structured points, so the model is less likely to add extra commentary or filler."
+                                )
+                            }
+                            .padding(22)
+                            .background(mainPanelBackground)
+                        }
+                        .frame(maxWidth: 640)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 28)
+                    }
+                }
+            }
+            .tabItem {
+                Label("Guide", systemImage: "book.pages")
+            }
+            .tag(AppTab.guide)
         }
         .fileImporter(
             isPresented: $showingFileImporter,
-            allowedContentTypes: [.plainText]
+            allowedContentTypes: supportedContentTypes
         ) { result in
             loadImportedFile(from: result)
         }
-        .onAppear {
-            animateBackground = true
-        }
     }
 
-    private var aiStatus: AIModelStatus {
-        if #available(iOS 26.0, *) {
-            let model = SystemLanguageModel.default
+    private var supportedContentTypes: [UTType] {
+        var contentTypes: [UTType] = [.plainText, .utf8PlainText, .rtf, .pdf]
 
-            switch model.availability {
-            case .available:
-                return .available
-            case .unavailable(.deviceNotEligible):
-                return .unavailable(
-                    title: "This device does not support Apple Intelligence",
-                    message: "You can still use the app, but on-device AI summaries need a supported Apple Intelligence device.",
-                    icon: "iphone.slash"
-                )
-            case .unavailable(.appleIntelligenceNotEnabled):
-                return .unavailable(
-                    title: "Turn on Apple Intelligence",
-                    message: "Enable Apple Intelligence in Settings before using on-device summaries.",
-                    icon: "gearshape.fill"
-                )
-            case .unavailable(.modelNotReady):
-                return .unavailable(
-                    title: "The on-device model is still preparing",
-                    message: "The model may still be downloading or preparing. Try again in a moment.",
-                    icon: "arrow.down.circle.fill"
-                )
-            case .unavailable:
-                return .unavailable(
-                    title: "On-device AI is unavailable",
-                    message: "The on-device model is not available right now.",
-                    icon: "exclamationmark.circle.fill"
-                )
-            }
-        } else {
-            return .unavailable(
-                title: "This iPhone version is too old",
-                message: "On-device AI summaries require a newer iOS version with Apple Intelligence support.",
-                icon: "exclamationmark.circle.fill"
-            )
+        if let markdownType = UTType(filenameExtension: "md") {
+            contentTypes.append(markdownType)
         }
+
+        return contentTypes
     }
 
     private var backgroundView: some View {
         ZStack {
             LinearGradient(
                 colors: [
-                    Color(red: 0.90, green: 0.95, blue: 1.0),
-                    Color(red: 0.96, green: 0.98, blue: 1.0),
+                    Color(red: 0.89, green: 0.94, blue: 1.0),
+                    Color(red: 0.95, green: 0.98, blue: 1.0),
                     Color(red: 0.98, green: 0.99, blue: 1.0)
                 ],
                 startPoint: .topLeading,
@@ -123,54 +147,31 @@ struct ContentView: View {
             .ignoresSafeArea()
 
             Circle()
-                .fill(secondaryAccent.opacity(0.30))
-                .frame(width: 260, height: 260)
-                .blur(radius: 26)
-                .scaleEffect(animateBackground ? 1.15 : 0.92)
-                .offset(
-                    x: animateBackground ? 150 : 110,
-                    y: animateBackground ? -240 : -285
-                )
-                .animation(
-                    .easeInOut(duration: 8).repeatForever(autoreverses: true),
-                    value: animateBackground
-                )
+                .fill(secondaryAccent.opacity(0.22))
+                .frame(width: 320, height: 320)
+                .blur(radius: 36)
+                .offset(x: 180, y: -250)
 
             Circle()
-                .fill(primaryAccent.opacity(0.22))
-                .frame(width: 300, height: 300)
-                .blur(radius: 32)
-                .scaleEffect(animateBackground ? 0.95 : 1.16)
-                .offset(
-                    x: animateBackground ? -170 : -125,
-                    y: animateBackground ? 290 : 225
-                )
-                .animation(
-                    .easeInOut(duration: 10).repeatForever(autoreverses: true),
-                    value: animateBackground
-                )
+                .fill(primaryAccent.opacity(0.18))
+                .frame(width: 280, height: 280)
+                .blur(radius: 44)
+                .offset(x: -170, y: 260)
 
             RoundedRectangle(cornerRadius: 80, style: .continuous)
-                .fill(Color.white.opacity(0.55))
-                .frame(width: 240, height: 240)
-                .blur(radius: 28)
-                .rotationEffect(.degrees(animateBackground ? 24 : -8))
-                .offset(
-                    x: animateBackground ? -130 : -70,
-                    y: animateBackground ? -120 : -170
-                )
-                .animation(
-                    .easeInOut(duration: 12).repeatForever(autoreverses: true),
-                    value: animateBackground
-                )
+                .fill(Color.white.opacity(0.38))
+                .frame(width: 260, height: 260)
+                .blur(radius: 34)
+                .rotationEffect(.degrees(18))
+                .offset(x: -120, y: -140)
         }
     }
     
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 16) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [secondaryAccent, primaryAccent],
@@ -178,85 +179,126 @@ struct ContentView: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: 64, height: 64)
+                        .frame(width: 58, height: 58)
 
                     Image(systemName: "text.badge.star")
-                        .font(.system(size: 28, weight: .semibold))
+                        .font(.system(size: 24, weight: .semibold))
                         .foregroundStyle(.white)
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("SimplifAI")
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
                         .foregroundStyle(cardTextColor)
 
-                    Text("Import your notes or type them below, then turn them into clean AI-ready summaries.")
+                    Text("Import a file or paste your notes, review the text, then turn it into a cleaner summary.")
                         .font(.subheadline)
                         .foregroundStyle(cardSecondaryTextColor)
                 }
             }
+
+            HStack(spacing: 10) {
+                headerBadge(title: "Supported Files", value: ".txt .md .rtf .pdf")
+                headerBadge(title: "Limit", value: "\(maximumSummaryWordCount) words")
+            }
         }
-        .padding(20)
-        .background(cardBackground)
+        .padding(.horizontal, 2)
     }
 
     private var importSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Import Notes")
+            Text("Import")
                 .font(.headline)
                 .foregroundStyle(cardTextColor)
 
-            Button(action: {
-                showingFileImporter = true
-            }) {
-                Label("Import File", systemImage: "doc.badge.plus")
-                    .fontWeight(.semibold)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(
-                        LinearGradient(
-                            colors: [secondaryAccent, primaryAccent],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .foregroundColor(.white)
-                    .cornerRadius(14)
+            HStack(spacing: 12) {
+                Button(action: {
+                    showingFileImporter = true
+                }) {
+                    importButtonLabel
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(importedFileName)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(cardTextColor)
+                        .lineLimit(1)
+
+                    Text("Supports plain text, markdown, rich text, and PDF.")
+                        .font(.footnote)
+                        .foregroundStyle(cardSecondaryTextColor)
+                }
+
+                Spacer()
+            }
+        }
+    }
+
+    private var importedPreviewSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Imported Preview")
+                    .font(.headline)
+                    .foregroundStyle(cardTextColor)
+
+                Spacer()
+
+                Text("\(previewLineCount) lines")
+                    .font(.footnote)
+                    .foregroundStyle(cardSecondaryTextColor)
             }
 
-            Text("Selected file: \(importedFileName)")
-                .font(.footnote)
-                .foregroundStyle(cardSecondaryTextColor)
-
-            Text("Supported file types: .txt")
-                .font(.footnote)
-                .foregroundStyle(cardSecondaryTextColor)
+            ScrollView {
+                Text(importedPreviewText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(cardTextColor)
+                    .textSelection(.enabled)
+                    .font(.callout)
+            }
+            .frame(maxWidth: .infinity, minHeight: 140, maxHeight: 220, alignment: .topLeading)
+            .padding()
+            .background(editorBackground)
         }
-        .padding(20)
-        .background(cardBackground)
     }
     
     private var notesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Enter your notes:")
-                .font(.headline)
-                .foregroundStyle(cardTextColor)
+            HStack(alignment: .firstTextBaseline) {
+                Text("Notes")
+                    .font(.headline)
+                    .foregroundStyle(cardTextColor)
+                Spacer()
 
-            TextEditor(text: $notesText)
-                .frame(minHeight: 220)
-                .focused($isNotesEditorFocused)
-                .scrollContentBackground(.hidden)
-                .padding(12)
-                .background(Color.white.opacity(0.92))
-                .foregroundStyle(cardTextColor)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(primaryAccent.opacity(0.14), lineWidth: 1)
-                )
-                .cornerRadius(16)
+                Text("\(currentWordCount)/\(maximumSummaryWordCount) words")
+                    .font(.footnote)
+                    .foregroundStyle(wordLimitExceeded ? .red : cardSecondaryTextColor)
+            }
+
+            ZStack(alignment: .topLeading) {
+                if notesText.isEmpty {
+                    Text("Enter your notes here.")
+                        .foregroundStyle(cardSecondaryTextColor)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 20)
+                        .allowsHitTesting(false)
+                }
+
+                TextEditor(text: $notesText)
+                    .focused($isNotesEditorFocused)
+                    .scrollContentBackground(.hidden)
+                    .padding(12)
+                    .font(.body)
+                    .foregroundStyle(cardTextColor)
+            }
+            .frame(minHeight: 220)
+            .background(editorBackground)
+
+            if wordLimitExceeded {
+                Text("Reduce the note to \(maximumSummaryWordCount) words or fewer before summarising.")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
         }
-        .padding(20)
-        .background(cardBackground)
     }
 
     private var summariseButton: some View {
@@ -265,32 +307,10 @@ struct ContentView: View {
                 await summariseNotes()
             }
         }) {
-            HStack {
-                if isLoading {
-                    ProgressView()
-                        .tint(.white)
-                } else {
-                    Image(systemName: "sparkles")
-                }
-
-                Text(isLoading ? "Summarising..." : "Summarise")
-                    .fontWeight(.semibold)
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(
-                LinearGradient(
-                    colors: [primaryAccent, secondaryAccent],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
-            .foregroundColor(.white)
-            .cornerRadius(16)
-            .shadow(color: primaryAccent.opacity(0.22), radius: 14, x: 0, y: 8)
+            summariseButtonLabel
         }
-        .disabled(isLoading || !aiStatus.isReady)
-        .opacity((isLoading || !aiStatus.isReady) ? 0.8 : 1.0)
+        .disabled(isLoading || wordLimitExceeded)
+        .opacity((isLoading || wordLimitExceeded) ? 0.65 : 1.0)
     }
 
     private var loadingSection: some View {
@@ -299,9 +319,10 @@ struct ContentView: View {
             Text("The AI is reading your notes and building a summary.")
                 .foregroundStyle(cardSecondaryTextColor)
         }
-        .padding(20)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardBackground)
+        .background(statusBackground)
     }
 
     private func errorSection(message: String) -> some View {
@@ -312,16 +333,30 @@ struct ContentView: View {
             Text(message)
                 .foregroundStyle(cardTextColor)
         }
-        .padding(20)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardBackground)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.orange.opacity(0.10))
+        )
     }
 
     private var summarySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Summary:")
-                .font(.headline)
-                .foregroundStyle(cardTextColor)
+            HStack {
+                Text("Summary")
+                    .font(.headline)
+                    .foregroundStyle(cardTextColor)
+
+                Spacer()
+
+                if !summaryBullets.isEmpty {
+                    Text("\(summaryBullets.count) bullets")
+                        .font(.footnote)
+                        .foregroundStyle(cardSecondaryTextColor)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 10) {
                 if summaryBullets.isEmpty {
@@ -342,25 +377,148 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading)
             .padding()
-            .background(Color.white.opacity(0.92))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(primaryAccent.opacity(0.14), lineWidth: 1)
-            )
-            .cornerRadius(16)
+            .background(editorBackground)
         }
-        .padding(20)
-        .background(cardBackground)
     }
 
-    private var cardBackground: some View {
+    private var mainPanelBackground: some View {
         RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .fill(Color.white.opacity(0.84))
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.88),
+                        Color(red: 0.96, green: 0.98, blue: 1.0).opacity(0.92)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(Color.white.opacity(0.65), lineWidth: 1)
+                    .stroke(Color.white.opacity(0.7), lineWidth: 1)
             )
-            .shadow(color: primaryAccent.opacity(0.10), radius: 18, x: 0, y: 10)
+            .shadow(color: primaryAccent.opacity(0.10), radius: 24, x: 0, y: 12)
+    }
+
+    private var editorBackground: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Color.white.opacity(0.82))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(primaryAccent.opacity(0.12), lineWidth: 1)
+            )
+    }
+
+    private var statusBackground: some View {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(primaryAccent.opacity(0.09))
+    }
+
+    private func guideCard(title: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(cardTextColor)
+
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(cardSecondaryTextColor)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(editorBackground)
+    }
+
+    private func headerBadge(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title.uppercased())
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(cardSecondaryTextColor)
+
+            Text(value)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(cardTextColor)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(0.58))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(0.65), lineWidth: 1)
+                )
+        )
+        .modifier(HeaderGlassModifier())
+    }
+
+    private var importButtonLabel: some View {
+        Label("Choose File", systemImage: "doc.badge.plus")
+            .fontWeight(.semibold)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .foregroundColor(.white)
+            .background(importButtonBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.white.opacity(0.35), lineWidth: 1)
+            )
+            .shadow(color: primaryAccent.opacity(0.18), radius: 10, x: 0, y: 6)
+    }
+
+    private var summariseButtonLabel: some View {
+        HStack {
+            if isLoading {
+                ProgressView()
+                    .tint(.white)
+            } else {
+                Image(systemName: "sparkles")
+            }
+
+            Text(isLoading ? "Summarising..." : "Summarise")
+                .fontWeight(.semibold)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .foregroundColor(.white)
+        .background(actionButtonBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(0.35), lineWidth: 1)
+        )
+        .shadow(color: primaryAccent.opacity(0.18), radius: 10, x: 0, y: 6)
+    }
+
+    private var actionButtonBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+
+        return shape
+            .fill(
+                LinearGradient(
+                    colors: [primaryAccent, secondaryAccent],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .modifier(ImportButtonGlassModifier())
+    }
+
+    private var importButtonBackground: some View {
+        actionButtonBackground
+    }
+
+    private var previewLineCount: Int {
+        importedPreviewText.split(whereSeparator: \.isNewline).count
+    }
+
+    private var currentWordCount: Int {
+        notesText.split { $0.isWhitespace || $0.isNewline }.count
+    }
+
+    private var wordLimitExceeded: Bool {
+        currentWordCount > maximumSummaryWordCount
     }
 
     private func loadImportedFile(from result: Result<URL, Error>) {
@@ -373,19 +531,53 @@ struct ContentView: View {
                 }
             }
 
-            let fileData = try Data(contentsOf: fileURL)
-            let fileText = try decodeImportedText(from: fileData)
+            let fileText = try extractText(from: fileURL)
 
             notesText = fileText
+            importedPreviewText = fileText
             importedFileName = fileURL.lastPathComponent
             errorMessage = nil
         } catch {
             importedFileName = "Could not import file"
-            errorMessage = "The selected file could not be read as plain text."
+            importedPreviewText = ""
+            errorMessage = "The selected file could not be read as supported text content."
         }
     }
 
+    private func extractText(from fileURL: URL) throws -> String {
+        if fileURL.pathExtension.lowercased() == "pdf" {
+            guard let document = PDFDocument(url: fileURL) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+
+            let extractedText = (0..<document.pageCount)
+                .compactMap { document.page(at: $0)?.string }
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard !extractedText.isEmpty else {
+                throw CocoaError(.fileReadInapplicableStringEncoding)
+            }
+
+            return extractedText
+        }
+
+        let fileData = try Data(contentsOf: fileURL)
+        return try decodeImportedText(from: fileData)
+    }
+
     private func decodeImportedText(from data: Data) throws -> String {
+        if let attributedString = try? NSAttributedString(
+            data: data,
+            options: [.documentType: NSAttributedString.DocumentType.rtf],
+            documentAttributes: nil
+        ) {
+            let plainText = attributedString.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !plainText.isEmpty {
+                return plainText
+            }
+        }
+
         let supportedEncodings: [String.Encoding] = [
             .utf8,
             .unicode,
@@ -398,7 +590,10 @@ struct ContentView: View {
 
         for encoding in supportedEncodings {
             if let text = String(data: data, encoding: encoding) {
-                return text
+                let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedText.isEmpty {
+                    return trimmedText
+                }
             }
         }
 
@@ -416,8 +611,8 @@ struct ContentView: View {
             return
         }
 
-        guard aiStatus.isReady else {
-            errorMessage = aiStatus.message
+        guard !wordLimitExceeded else {
+            errorMessage = "This note is over the \(maximumSummaryWordCount)-word limit. Shorten it before summarising."
             return
         }
 
@@ -437,27 +632,91 @@ struct ContentView: View {
 
     private func summariseOnDevice(notes: String) async throws -> [String] {
         if #available(iOS 26.0, *) {
-            return try await OnDeviceSummaryService().summariseNotes(notes: notes)
+            return try await OnDeviceSummaryAI().summariseNotes(notes: notes)
         } else {
             throw SummaryError(message: "This iPhone version does not support on-device AI summaries.")
         }
     }
 }
 
-private struct OnDeviceSummaryService {
+private enum AppTab: Hashable {
+    case summarise
+    case guide
+}
+
+private struct HeaderGlassModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        } else {
+            content
+        }
+    }
+}
+
+private struct PrimaryGlassButtonModifier: ViewModifier {
+    let isEnabled: Bool
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .buttonStyle(.glassProminent)
+                .tint(Color(red: 0.08, green: 0.36, blue: 0.67))
+        } else {
+            content
+                .background(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.08, green: 0.36, blue: 0.67),
+                            Color(red: 0.17, green: 0.63, blue: 0.77)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .foregroundColor(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .shadow(color: Color(red: 0.08, green: 0.36, blue: 0.67).opacity(isEnabled ? 0.22 : 0.08), radius: 12, x: 0, y: 8)
+        }
+    }
+}
+
+private struct ImportButtonGlassModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        } else {
+            content
+        }
+    }
+}
+
+private struct OnDeviceSummaryAI {
+    private let unsupportedInputMarker = "NO_SUMMARY"
+
     @available(iOS 26.0, *)
     func summariseNotes(notes: String) async throws -> [String] {
         let instructions = """
-        Summarise the person's notes into 3 to 6 short bullet points.
-        Return only the bullet points.
-        Keep each bullet concise, clear, and easy to scan.
+        You are a text simplifier, not a chatbot.
+        Your only job is to simplify and summarise note-like text into short factual bullet points.
+        Only restate information already present in the text.
+        Do not reply conversationally.
+        Do not answer greetings, questions, or prompts as if you are chatting with the person.
+        If the input is not real note content to simplify, return exactly \(unsupportedInputMarker).
+        Otherwise, return only concise summary bullet points.
         """
 
         let session = LanguageModelSession(instructions: instructions)
-        let response = try await session.respond(to: notes)
-        let text = response.content
+        let response: LanguageModelSession.Response<String>
+        do {
+            response = try await session.respond(to: notes)
+        } catch let error as LanguageModelSession.GenerationError {
+            throw try await SummaryError(generationError: error)
+        }
 
-        let bullets = text
+        let bullets = response.content
             .split(whereSeparator: \.isNewline)
             .map { line in
                 line
@@ -465,32 +724,24 @@ private struct OnDeviceSummaryService {
                     .replacingOccurrences(of: "- ", with: "")
                     .replacingOccurrences(of: "• ", with: "")
                     .replacingOccurrences(of: "* ", with: "")
+                    .replacingOccurrences(of: "1. ", with: "")
+                    .replacingOccurrences(of: "2. ", with: "")
+                    .replacingOccurrences(of: "3. ", with: "")
+                    .replacingOccurrences(of: "4. ", with: "")
+                    .replacingOccurrences(of: "5. ", with: "")
+                    .replacingOccurrences(of: "6. ", with: "")
             }
             .filter { !$0.isEmpty }
 
-        if bullets.isEmpty {
-            throw SummaryError(message: "The AI response did not contain any bullet points.")
+        if bullets.count == 1, bullets[0].caseInsensitiveCompare(unsupportedInputMarker) == .orderedSame {
+            throw SummaryError(message: "Enter actual notes or text to simplify, not a chat message.")
         }
 
-        return bullets
-    }
-}
-
-private struct AIModelStatus {
-    let title: String
-    let message: String
-    let icon: String
-    let isReady: Bool
-
-    static let available = AIModelStatus(
-        title: "Apple Intelligence is ready",
-        message: "Your summaries will run directly on this device. No API key is needed.",
-        icon: "checkmark.circle.fill",
-        isReady: true
-    )
-
-    static func unavailable(title: String, message: String, icon: String) -> AIModelStatus {
-        AIModelStatus(title: title, message: message, icon: icon, isReady: false)
+        let limitedBullets = Array(bullets[0..<min(bullets.count, 6)])
+        if limitedBullets.isEmpty {
+            throw SummaryError(message: "Please enter valid notes or files.")
+        }
+        return limitedBullets
     }
 }
 
@@ -500,12 +751,24 @@ private struct SummaryError: Error {
 
 @available(iOS 26.0, *)
 extension SummaryError {
-    init(generationError: LanguageModelSession.GenerationError) {
+    init(generationError: LanguageModelSession.GenerationError) async throws {
         switch generationError {
         case .unsupportedLanguageOrLocale:
             self.init(message: "This language is not supported by the on-device model.")
         case .exceededContextWindowSize:
             self.init(message: "These notes are too long for one on-device summary. Try a shorter note or split it into parts.")
+        case .decodingFailure:
+            self.init(message: "The model returned an invalid summary format. Try again with shorter or cleaner notes.")
+        case .guardrailViolation:
+            self.init(message: "The notes triggered a safety restriction, so the model could not summarise them.")
+        case .assetsUnavailable:
+            self.init(message: "The on-device AI model is not ready yet. Try again in a moment.")
+        case .rateLimited:
+            self.init(message: "The model is busy right now. Wait a moment and try again.")
+        case .concurrentRequests:
+            self.init(message: "A summary is already in progress. Please wait for it to finish.")
+        case .refusal:
+            self.init(message: "The model refused to summarise this content.")
         default:
             self.init(message: "The on-device model could not create a summary right now.")
         }
