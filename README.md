@@ -49,17 +49,6 @@ Designed for students, professionals, and everyday users, SimplifAI helps you qu
 
 ---
 
-## 🔐 API Key Setup
-
-This app requires an AI API key.
-
-**Important:** Never commit your API key to GitHub.
-
-* Store your key securely (e.g. in `.xcconfig` or environment variables)
-* Load it safely in your app
-
----
-
 ## 🎯 Use Cases
 
 * Summarising lecture notes
@@ -71,9 +60,9 @@ This app requires an AI API key.
 
 ## 📌 Roadmap
 
-* [ ] Save & history feature
+* [x] Save & history feature
 * [ ] Share summaries
-* [ ] Dark mode improvements
+* [x] Dark mode improvements
 * [x] Offline support
 
 ---
