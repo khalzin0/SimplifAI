@@ -2,13 +2,21 @@ import SwiftUI
 import UniformTypeIdentifiers
 import FoundationModels
 import PDFKit
+import SwiftData
 
 struct ContentView: View {
+    private let contentWidth: CGFloat = 640
+    private let horizontalScreenPadding: CGFloat = 20
+    private let verticalScreenPadding: CGFloat = 28
     private let maximumSummaryWordCount = 3_000
+    private let noFileSelectedName = "No file selected"
+    private let manualNotesSourceName = "Manual Notes"
     @AppStorage("appAppearance") private var appAppearanceRawValue = AppAppearance.system.rawValue
     @AppStorage("preferLargeText") private var preferLargeText = false
     @AppStorage("reduceVisualEffects") private var reduceVisualEffects = false
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Item.timestamp, order: .reverse) private var historyItems: [Item]
     @State private var selectedTab: AppTab = .summarise
     @State private var notesText: String = ""
     @State private var summaryBullets: [String] = []
@@ -47,30 +55,23 @@ struct ContentView: View {
                 ZStack {
                     backgroundView
 
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 18) {
-                            headerSection
-                            VStack(alignment: .leading, spacing: 18) {
-                                importSection
-                                if !importedPreviewText.isEmpty {
-                                    importedPreviewSection
-                                }
-                                notesSection
-                                summariseButton
-                                if isLoading {
-                                    loadingSection
-                                }
-                                if let errorMessage {
-                                    errorSection(message: errorMessage)
-                                }
-                                summarySection
+                    tabScrollContent {
+                        headerSection
+                        contentPanel {
+                            importSection
+                            if !importedPreviewText.isEmpty {
+                                importedPreviewSection
                             }
-                            .padding(22)
-                            .background(mainPanelBackground)
+                            notesSection
+                            summariseButton
+                            if isLoading {
+                                loadingSection
+                            }
+                            if let errorMessage {
+                                errorSection(message: errorMessage)
+                            }
+                            summarySection
                         }
-                        .frame(maxWidth: 640)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 28)
                     }
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -98,49 +99,42 @@ struct ContentView: View {
                 ZStack {
                     backgroundView
 
-                    ScrollView {
+                    tabScrollContent {
                         VStack(alignment: .leading, spacing: 18) {
-                            Text("Guide")
+                            Text("History")
                                 .font(.system(size: 34, weight: .bold, design: .rounded))
                                 .foregroundStyle(cardTextColor)
 
-                            Text("A quick reference for how this summariser works.")
+                            Text("Reopen previous summaries and continue from them.")
                                 .font(.subheadline)
                                 .foregroundStyle(cardSecondaryTextColor)
 
-                            VStack(alignment: .leading, spacing: 16) {
-                                guideCard(
-                                    title: "Import",
-                                    text: "Bring in plain text, markdown, rich text, or PDF files. Imported text is loaded into the editor so you can review it first."
-                                )
-                                guideCard(
-                                    title: "Limit",
-                                    text: "The app summarises up to \(maximumSummaryWordCount) words at a time to avoid overflowing the on-device model context."
-                                )
-                                guideCard(
-                                    title: "Output",
-                                    text: "Summaries are generated as short structured points, so the model is less likely to add extra commentary or filler."
-                                )
+                            contentPanel(spacing: 16) {
+                                if historyItems.isEmpty {
+                                    guideCard(
+                                        title: "No History Yet",
+                                        text: "Create a summary in the Summarise tab and it will appear here."
+                                    )
+                                } else {
+                                    ForEach(historyItems) { item in
+                                        historyCard(item)
+                                    }
+                                }
                             }
-                            .padding(22)
-                            .background(mainPanelBackground)
                         }
-                        .frame(maxWidth: 640)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 28)
                     }
                 }
             }
             .tabItem {
-                Label("Guide", systemImage: "book.pages")
+                Label("History", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90")
             }
-            .tag(AppTab.guide)
+            .tag(AppTab.history)
 
             NavigationStack {
                 ZStack {
                     backgroundView
 
-                    ScrollView {
+                    tabScrollContent {
                         VStack(alignment: .leading, spacing: 18) {
                             Text("Settings")
                                 .font(.system(size: 34, weight: .bold, design: .rounded))
@@ -150,7 +144,7 @@ struct ContentView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(cardSecondaryTextColor)
 
-                            VStack(alignment: .leading, spacing: 18) {
+                            contentPanel {
                                 settingsSectionTitle("Appearance")
 
                                 Picker("Appearance", selection: $appAppearanceRawValue) {
@@ -178,12 +172,7 @@ struct ContentView: View {
                                 }
                                 .tint(primaryAccent)
                             }
-                            .padding(22)
-                            .background(mainPanelBackground)
                         }
-                        .frame(maxWidth: 640)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 28)
                     }
                 }
             }
@@ -210,6 +199,28 @@ struct ContentView: View {
         }
 
         return contentTypes
+    }
+
+    private func tabScrollContent<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                content()
+            }
+            .frame(maxWidth: contentWidth)
+            .padding(.horizontal, horizontalScreenPadding)
+            .padding(.vertical, verticalScreenPadding)
+        }
+    }
+
+    private func contentPanel<Content: View>(
+        spacing: CGFloat = 18,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: spacing) {
+            content()
+        }
+        .padding(22)
+        .background(mainPanelBackground)
     }
 
     private var backgroundView: some View {
@@ -510,6 +521,52 @@ struct ContentView: View {
         .background(editorBackground)
     }
 
+    private func historyCard(_ item: Item) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.sourceName)
+                        .font(.headline)
+                        .foregroundStyle(cardTextColor)
+
+                    Text(item.timestamp.formatted(date: .abbreviated, time: .shortened))
+                        .font(.footnote)
+                        .foregroundStyle(cardSecondaryTextColor)
+                }
+
+                Spacer()
+
+                Button {
+                    deleteHistoryItem(item)
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundStyle(cardSecondaryTextColor)
+                }
+                .accessibilityLabel("Delete history item")
+            }
+
+            Text(item.summaryText)
+                .font(.subheadline)
+                .foregroundStyle(cardSecondaryTextColor)
+                .lineLimit(4)
+
+            Button {
+                useHistoryItem(item)
+            } label: {
+                Label("Use Again", systemImage: "arrow.clockwise")
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .foregroundStyle(.white)
+                    .background(importButtonBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(editorBackground)
+    }
+
     private func settingsSectionTitle(_ title: String) -> some View {
         Text(title)
             .font(.headline)
@@ -729,6 +786,7 @@ struct ContentView: View {
             let bullets = try await summariseOnDevice(notes: trimmedNotes)
 
             summaryBullets = bullets
+            saveHistoryEntry(notes: trimmedNotes, bullets: bullets)
         } catch let error as SummaryError {
             errorMessage = error.message
         } catch {
@@ -743,11 +801,38 @@ struct ContentView: View {
             throw SummaryError(message: "This iPhone version does not support on-device AI summaries.")
         }
     }
+
+    private func saveHistoryEntry(notes: String, bullets: [String]) {
+        let sourceName = importedFileName == noFileSelectedName ? manualNotesSourceName : importedFileName
+        let summaryText = bullets.joined(separator: "\n")
+        let item = Item(sourceName: sourceName, notesText: notes, summaryText: summaryText)
+        modelContext.insert(item)
+    }
+
+    private func useHistoryItem(_ item: Item) {
+        notesText = item.notesText
+        summaryBullets = normalisedBulletLines(from: item.summaryText)
+        importedFileName = item.sourceName
+        importedPreviewText = item.sourceName == manualNotesSourceName ? "" : item.notesText
+        errorMessage = nil
+        selectedTab = .summarise
+    }
+
+    private func deleteHistoryItem(_ item: Item) {
+        modelContext.delete(item)
+    }
+
+    private func normalisedBulletLines(from text: String) -> [String] {
+        text
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
 }
 
 private enum AppTab: Hashable {
     case summarise
-    case guide
+    case history
     case settings
 }
 
@@ -792,33 +877,6 @@ private struct HeaderGlassModifier: ViewModifier {
     }
 }
 
-private struct PrimaryGlassButtonModifier: ViewModifier {
-    let isEnabled: Bool
-
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content
-                .buttonStyle(.glassProminent)
-                .tint(Color(red: 0.08, green: 0.36, blue: 0.67))
-        } else {
-            content
-                .background(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.08, green: 0.36, blue: 0.67),
-                            Color(red: 0.17, green: 0.63, blue: 0.77)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .foregroundColor(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(color: Color(red: 0.08, green: 0.36, blue: 0.67).opacity(isEnabled ? 0.22 : 0.08), radius: 12, x: 0, y: 8)
-        }
-    }
-}
-
 private struct ImportButtonGlassModifier: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
@@ -855,19 +913,7 @@ private struct OnDeviceSummaryAI {
 
         let bullets = response.content
             .split(whereSeparator: \.isNewline)
-            .map { line in
-                line
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                    .replacingOccurrences(of: "- ", with: "")
-                    .replacingOccurrences(of: "• ", with: "")
-                    .replacingOccurrences(of: "* ", with: "")
-                    .replacingOccurrences(of: "1. ", with: "")
-                    .replacingOccurrences(of: "2. ", with: "")
-                    .replacingOccurrences(of: "3. ", with: "")
-                    .replacingOccurrences(of: "4. ", with: "")
-                    .replacingOccurrences(of: "5. ", with: "")
-                    .replacingOccurrences(of: "6. ", with: "")
-            }
+            .map(Self.cleanedBulletLine)
             .filter { !$0.isEmpty }
 
         if bullets.count == 1, bullets[0].caseInsensitiveCompare(unsupportedInputMarker) == .orderedSame {
@@ -879,6 +925,20 @@ private struct OnDeviceSummaryAI {
             throw SummaryError(message: "Please enter valid notes or files.")
         }
         return limitedBullets
+    }
+
+    private static func cleanedBulletLine(_ line: Substring) -> String {
+        line
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "- ", with: "")
+            .replacingOccurrences(of: "• ", with: "")
+            .replacingOccurrences(of: "* ", with: "")
+            .replacingOccurrences(of: "1. ", with: "")
+            .replacingOccurrences(of: "2. ", with: "")
+            .replacingOccurrences(of: "3. ", with: "")
+            .replacingOccurrences(of: "4. ", with: "")
+            .replacingOccurrences(of: "5. ", with: "")
+            .replacingOccurrences(of: "6. ", with: "")
     }
 }
 
