@@ -1277,7 +1277,7 @@ private struct OnDeviceSummaryAI {
     }
 
     private static func cleanedBulletLine(_ line: Substring) -> String {
-        line
+        let cleaned = line
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "- ", with: "")
             .replacingOccurrences(of: "• ", with: "")
@@ -1288,6 +1288,25 @@ private struct OnDeviceSummaryAI {
             .replacingOccurrences(of: "4. ", with: "")
             .replacingOccurrences(of: "5. ", with: "")
             .replacingOccurrences(of: "6. ", with: "")
+            .replacingOccurrences(of: "#", with: "")
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "__", with: "")
+            .replacingOccurrences(of: "`", with: "")
+            .replacingOccurrences(of: "##", with: "")
+            .replacingOccurrences(of: "###", with: "")
+            .replacingOccurrences(of: "[", with: "")
+            .replacingOccurrences(of: "]", with: "")
+            .replacingOccurrences(of: "{", with: "")
+            .replacingOccurrences(of: "}", with: "")
+            .replacingOccurrences(of: "|", with: "")
+            .replacingOccurrences(of: "•", with: "")
+            .replacingOccurrences(of: "*", with: "")
+            .replacingOccurrences(of: "  ", with: " ")
+
+        return cleaned
+            .trimmingCharacters(in: CharacterSet(charactersIn: " -•*_#[]{}|"))
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
