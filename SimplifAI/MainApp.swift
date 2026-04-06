@@ -731,48 +731,52 @@ struct MainContentView: View {
     }
 
     private func historyDetailView(for item: Item) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                contentPanel {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(item.sourceName)
-                            .font(.system(size: 30, weight: .bold, design: .rounded))
-                            .foregroundStyle(cardTextColor)
+        ZStack {
+            backgroundView
 
-                        Text(item.timestamp.formatted(date: .complete, time: .shortened))
-                            .font(.subheadline)
-                            .foregroundStyle(cardSecondaryTextColor)
-                    }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    contentPanel {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(item.sourceName)
+                                .font(.system(size: 30, weight: .bold, design: .rounded))
+                                .foregroundStyle(cardTextColor)
 
-                    historyDetailSection(
-                        title: "Original Notes",
-                        detail: "\(wordCount(for: item.notesText)) words",
-                        text: item.notesText
-                    )
+                            Text(item.timestamp.formatted(date: .complete, time: .shortened))
+                                .font(.subheadline)
+                                .foregroundStyle(cardSecondaryTextColor)
+                        }
 
-                    historyDetailSection(
-                        title: "Summary",
-                        detail: "\(wordCount(for: item.summaryText)) words",
-                        text: formattedHistorySummaryText(for: item)
-                    )
+                        historyDetailSection(
+                            title: "Original Notes",
+                            detail: "\(wordCount(for: item.notesText)) words",
+                            text: item.notesText
+                        )
 
-                    Button {
-                        useHistoryItem(item)
-                    } label: {
-                        Label("Use This Summary", systemImage: "arrow.clockwise")
-                            .fontWeight(.semibold)
-                            .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 14)
-                            .foregroundStyle(.white)
-                            .background(importButtonBackground)
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        historyDetailSection(
+                            title: "Summary",
+                            detail: "\(wordCount(for: item.summaryText)) words",
+                            text: formattedHistorySummaryText(for: item)
+                        )
+
+                        Button {
+                            useHistoryItem(item)
+                        } label: {
+                            Label("Use This Summary", systemImage: "arrow.clockwise")
+                                .fontWeight(.semibold)
+                                .frame(maxWidth: .infinity)
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 14)
+                                .foregroundStyle(.white)
+                                .background(importButtonBackground)
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        }
                     }
                 }
+                .frame(maxWidth: contentWidth)
+                .padding(.horizontal, horizontalScreenPadding)
+                .padding(.vertical, verticalScreenPadding)
             }
-            .frame(maxWidth: contentWidth)
-            .padding(.horizontal, horizontalScreenPadding)
-            .padding(.vertical, verticalScreenPadding)
         }
         .navigationTitle("History Detail")
         .navigationBarTitleDisplayMode(.inline)
