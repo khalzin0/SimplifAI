@@ -7,7 +7,7 @@ import SwiftData
 import UIKit
 import Vision
 
-struct ContentView: View {
+struct MainContentView: View {
     private let contentWidth: CGFloat = 640
     private let horizontalScreenPadding: CGFloat = 20
     private let verticalScreenPadding: CGFloat = 28
@@ -23,6 +23,9 @@ struct ContentView: View {
     @State private var selectedTab: AppTab = .summarise
     @State private var notesText: String = ""
     @State private var summaryBullets: [String] = []
+    @State private var summaryFormat: SummaryFormat = .bullets
+    @State private var summaryDetail: SummaryDetail = .standard
+    @State private var summaryBulletCount = 4
     @State private var showingFileImporter = false
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var showingPhotoPicker = false
@@ -310,9 +313,7 @@ struct ContentView: View {
                         )
                         .frame(width: 58, height: 58)
 
-                    Image(systemName: "text.badge.star")
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(.white)
+                    appHeaderIcon
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -326,8 +327,9 @@ struct ContentView: View {
                 }
             }
 
-            HStack(spacing: 10) {
+            HStack {
                 headerBadge(title: "Supported Files", value: ".txt .md .rtf .pdf")
+                Spacer()
                 headerBadge(title: "Limit", value: "\(maximumSummaryWordCount) words")
             }
         }
@@ -336,9 +338,30 @@ struct ContentView: View {
 
     private var importSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Import")
-                .font(.headline)
-                .foregroundStyle(cardTextColor)
+            HStack {
+                Text("Import")
+                    .font(.headline)
+                    .foregroundStyle(cardTextColor)
+
+                Spacer()
+
+                NavigationLink {
+                    summarySettingsPage
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .padding(12)
+                        .background(actionButtonBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color.white.opacity(0.35), lineWidth: 1)
+                        )
+                        .shadow(color: primaryAccent.opacity(0.18), radius: 10, x: 0, y: 6)
+                }
+                .accessibilityLabel("Summary settings")
+            }
 
             HStack(spacing: 12) {
                 Menu {
@@ -375,6 +398,30 @@ struct ContentView: View {
         }
     }
 
+    private var summarySettingsPage: some View {
+        ZStack {
+            backgroundView
+
+            tabScrollContent {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("Summary Settings")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(cardTextColor)
+
+                    Text("Control how the app formats and sizes each summary.")
+                        .font(.subheadline)
+                        .foregroundStyle(cardSecondaryTextColor)
+
+                    contentPanel {
+                        summaryOptionsSection
+                    }
+                }
+            }
+        }
+        .navigationTitle("Summary Settings")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
     private var importedPreviewSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -399,6 +446,39 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, minHeight: 140, maxHeight: 220, alignment: .topLeading)
             .padding()
             .background(editorBackground)
+        }
+    }
+
+    private var summaryOptionsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Summary Options")
+                .font(.headline)
+                .foregroundStyle(cardTextColor)
+
+            Picker("Format", selection: $summaryFormat) {
+                ForEach(SummaryFormat.allCases) { format in
+                    Text(format.title).tag(format)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Picker("Length", selection: $summaryDetail) {
+                ForEach(SummaryDetail.allCases) { detail in
+                    Text(detail.title).tag(detail)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if summaryFormat == .bullets {
+                Stepper(value: $summaryBulletCount, in: 3...6) {
+                    Text("Bullet points: \(summaryBulletCount)")
+                        .foregroundStyle(cardSecondaryTextColor)
+                }
+            } else {
+                Text("Paragraph summaries use the selected length to control how concise or detailed the result is.")
+                    .font(.footnote)
+                    .foregroundStyle(cardSecondaryTextColor)
+            }
         }
     }
     
@@ -503,6 +583,11 @@ struct ContentView: View {
                 if summaryBullets.isEmpty {
                     Text("Your AI summary will appear here.")
                         .foregroundStyle(cardSecondaryTextColor)
+                } else if summaryFormat == .paragraph {
+                    Text(summaryBullets.joined(separator: " "))
+                        .foregroundStyle(cardTextColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .lineSpacing(4)
                 } else {
                     ForEach(summaryBullets, id: \.self) { bullet in
                         HStack(alignment: .top, spacing: 10) {
@@ -614,6 +699,20 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
         .background(editorBackground)
+    }
+
+    private var appHeaderIcon: some View {
+        ZStack {
+            Color.clear
+
+            Image("iconUI")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 36, height: 36)
+                .offset(x: 1, y: -1)
+        }
+        .frame(width: 44, height: 44, alignment: .center)
+        .shadow(color: Color.black.opacity(isDarkModeActive ? 0.18 : 0.10), radius: 6, x: 0, y: 3)
     }
 
     private func settingsSectionTitle(_ title: String) -> some View {
@@ -731,6 +830,14 @@ struct ContentView: View {
 
     private var wordLimitExceeded: Bool {
         currentWordCount > maximumSummaryWordCount
+    }
+
+    private var summaryConfiguration: SummaryConfiguration {
+        SummaryConfiguration(
+            format: summaryFormat,
+            detail: summaryDetail,
+            bulletCount: summaryBulletCount
+        )
     }
 
     private var appVersionDescription: String {
@@ -1004,7 +1111,10 @@ struct ContentView: View {
 
     private func summariseOnDevice(notes: String) async throws -> [String] {
         if #available(iOS 26.0, *) {
-            return try await OnDeviceSummaryAI().summariseNotes(notes: notes)
+            return try await OnDeviceSummaryAI().summariseNotes(
+                notes: notes,
+                configuration: summaryConfiguration
+            )
         } else {
             throw SummaryError(message: "This iPhone version does not support on-device AI summaries.")
         }
@@ -1072,6 +1182,58 @@ private enum AppAppearance: String, CaseIterable, Identifiable {
             return .dark
         }
     }
+}
+
+private enum SummaryFormat: String, CaseIterable, Identifiable {
+    case bullets
+    case paragraph
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .bullets:
+            return "Bullets"
+        case .paragraph:
+            return "Paragraph"
+        }
+    }
+}
+
+private enum SummaryDetail: String, CaseIterable, Identifiable {
+    case brief
+    case standard
+    case detailed
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .brief:
+            return "Brief"
+        case .standard:
+            return "Standard"
+        case .detailed:
+            return "Detailed"
+        }
+    }
+
+    var promptFragment: String {
+        switch self {
+        case .brief:
+            return "short and highly condensed"
+        case .standard:
+            return "clear and balanced"
+        case .detailed:
+            return "slightly more detailed while still concise"
+        }
+    }
+}
+
+private struct SummaryConfiguration {
+    let format: SummaryFormat
+    let detail: SummaryDetail
+    let bulletCount: Int
 }
 
 private struct HeaderGlassModifier: ViewModifier {
@@ -1145,14 +1307,20 @@ private struct OnDeviceSummaryAI {
     private let finalBulletLimit = 6
 
     @available(iOS 26.0, *)
-    func summariseNotes(notes: String) async throws -> [String] {
+    func summariseNotes(notes: String, configuration: SummaryConfiguration) async throws -> [String] {
         let chunks = noteChunks(from: notes)
 
         if chunks.count == 1 {
-            return try await summariseChunk(chunks[0])
+            return try await summariseChunk(chunks[0], configuration: configuration)
         }
 
-        let partialSummaries = try await summariseChunks(chunks)
+        let chunkConfiguration = SummaryConfiguration(
+            format: .bullets,
+            detail: configuration.detail,
+            bulletCount: min(configuration.bulletCount, 4)
+        )
+
+        let partialSummaries = try await summariseChunks(chunks, configuration: chunkConfiguration)
         let mergedSummaryInput = partialSummaries
             .enumerated()
             .map { index, bullets in
@@ -1161,11 +1329,11 @@ private struct OnDeviceSummaryAI {
             }
             .joined(separator: "\n\n")
 
-        return try await mergeSummaries(mergedSummaryInput)
+        return try await mergeSummaries(mergedSummaryInput, configuration: configuration)
     }
 
     @available(iOS 26.0, *)
-    private func summariseChunk(_ notes: String) async throws -> [String] {
+    private func summariseChunk(_ notes: String, configuration: SummaryConfiguration) async throws -> [String] {
         let instructions = """
         You are a text simplifier, not a chatbot.
         Your only job is to simplify and summarise note-like text into short factual bullet points.
@@ -1173,7 +1341,7 @@ private struct OnDeviceSummaryAI {
         Do not reply conversationally.
         Do not answer greetings, questions, or prompts as if you are chatting with the person.
         If the input is not real note content to simplify, return exactly \(unsupportedInputMarker).
-        Otherwise, return only concise summary bullet points.
+        \(outputInstructions(for: configuration))
         """
 
         let session = LanguageModelSession(instructions: instructions)
@@ -1184,16 +1352,14 @@ private struct OnDeviceSummaryAI {
             throw try await SummaryError(generationError: error)
         }
 
-        let bullets = response.content
-            .split(whereSeparator: \.isNewline)
-            .map(Self.cleanedBulletLine)
-            .filter { !$0.isEmpty }
+        let bullets = parsedSummaryItems(from: response.content, configuration: configuration)
 
         if bullets.count == 1, bullets[0].caseInsensitiveCompare(unsupportedInputMarker) == .orderedSame {
             throw SummaryError(message: "Please enter valid notes or files.")
         }
 
-        let limitedBullets = Array(bullets[0..<min(bullets.count, finalBulletLimit)])
+        let limit = configuration.format == .paragraph ? 1 : min(configuration.bulletCount, finalBulletLimit)
+        let limitedBullets = Array(bullets[0..<min(bullets.count, limit)])
         if limitedBullets.isEmpty {
             throw SummaryError(message: "Please enter valid notes or files.")
         }
@@ -1201,22 +1367,22 @@ private struct OnDeviceSummaryAI {
     }
 
     @available(iOS 26.0, *)
-    private func summariseChunks(_ chunks: [String]) async throws -> [[String]] {
+    private func summariseChunks(_ chunks: [String], configuration: SummaryConfiguration) async throws -> [[String]] {
         var summaries: [[String]] = []
         summaries.reserveCapacity(chunks.count)
 
         for chunk in chunks {
-            summaries.append(try await summariseChunk(chunk))
+            summaries.append(try await summariseChunk(chunk, configuration: configuration))
         }
 
         return summaries
     }
 
     @available(iOS 26.0, *)
-    private func mergeSummaries(_ summaryText: String) async throws -> [String] {
+    private func mergeSummaries(_ summaryText: String, configuration: SummaryConfiguration) async throws -> [String] {
         let instructions = """
         Merge the provided section summaries into one short final summary.
-        Return only concise factual bullet points.
+        \(outputInstructions(for: configuration))
         Remove duplicates and keep the most important points only.
         Do not add new information.
         """
@@ -1229,12 +1395,10 @@ private struct OnDeviceSummaryAI {
             throw try await SummaryError(generationError: error)
         }
 
-        let bullets = response.content
-            .split(whereSeparator: \.isNewline)
-            .map(Self.cleanedBulletLine)
-            .filter { !$0.isEmpty }
+        let bullets = parsedSummaryItems(from: response.content, configuration: configuration)
 
-        let limitedBullets = Array(bullets[0..<min(bullets.count, finalBulletLimit)])
+        let limit = configuration.format == .paragraph ? 1 : min(configuration.bulletCount, finalBulletLimit)
+        let limitedBullets = Array(bullets[0..<min(bullets.count, limit)])
         if limitedBullets.isEmpty {
             throw SummaryError(message: "The model could not produce a merged summary.")
         }
@@ -1276,8 +1440,30 @@ private struct OnDeviceSummaryAI {
         return chunks.isEmpty ? [notes] : chunks
     }
 
-    private static func cleanedBulletLine(_ line: Substring) -> String {
-        let cleaned = line
+    private func outputInstructions(for configuration: SummaryConfiguration) -> String {
+        switch configuration.format {
+        case .bullets:
+            return "Return only \(configuration.bulletCount) concise bullet points. Make them \(configuration.detail.promptFragment)."
+        case .paragraph:
+            return "Return one clean paragraph only. Make it \(configuration.detail.promptFragment). Do not use bullets, hashtags, or headings."
+        }
+    }
+
+    private func parsedSummaryItems(from text: String, configuration: SummaryConfiguration) -> [String] {
+        switch configuration.format {
+        case .bullets:
+            return text
+                .split(whereSeparator: \.isNewline)
+                .map(Self.cleanedBulletLine)
+                .filter { !$0.isEmpty }
+        case .paragraph:
+            let cleanedParagraph = Self.cleanedParagraph(text)
+            return cleanedParagraph.isEmpty ? [] : [cleanedParagraph]
+        }
+    }
+
+    nonisolated private static func cleanedBulletLine(_ line: Substring) -> String {
+        let cleaned = String(line)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "- ", with: "")
             .replacingOccurrences(of: "• ", with: "")
@@ -1303,7 +1489,31 @@ private struct OnDeviceSummaryAI {
             .replacingOccurrences(of: "*", with: "")
             .replacingOccurrences(of: "  ", with: " ")
 
-        return cleaned
+        return normalizedText(cleaned)
+    }
+
+    nonisolated private static func cleanedParagraph(_ text: String) -> String {
+        let cleaned = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "#", with: "")
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "__", with: "")
+            .replacingOccurrences(of: "`", with: "")
+            .replacingOccurrences(of: "[", with: "")
+            .replacingOccurrences(of: "]", with: "")
+            .replacingOccurrences(of: "{", with: "")
+            .replacingOccurrences(of: "}", with: "")
+            .replacingOccurrences(of: "|", with: "")
+            .replacingOccurrences(of: "•", with: " ")
+            .replacingOccurrences(of: "*", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "  ", with: " ")
+
+        return normalizedText(cleaned)
+    }
+
+    nonisolated private static func normalizedText(_ text: String) -> String {
+        text
             .trimmingCharacters(in: CharacterSet(charactersIn: " -•*_#[]{}|"))
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
