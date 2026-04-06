@@ -22,8 +22,8 @@
       "appearance" : "dark",
       "value" : {
         "linear-gradient" : [
-          "display-p3:0.11511,0.19641,0.26636,1.00000",
-          "display-p3:0.17505,0.36353,0.65088,1.00000"
+          "display-p3:0.30923,0.61427,0.87619,1.00000",
+          "display-p3:0.08760,0.14980,0.20534,1.00000"
         ],
         "orientation" : {
           "start" : {
@@ -42,13 +42,30 @@
     {
       "layers" : [
         {
-          "fill-specializations" : [
+          "blend-mode-specializations" : [
             {
               "appearance" : "dark",
+              "value" : "normal"
+            },
+            {
+              "appearance" : "tinted",
+              "value" : "normal"
+            }
+          ],
+          "fill-specializations" : [
+            {
+              "value" : "automatic"
+            },
+            {
+              "appearance" : "dark",
+              "value" : "none"
+            },
+            {
+              "appearance" : "tinted",
               "value" : {
                 "linear-gradient" : [
-                  "extended-gray:1.00000,1.00000",
-                  "display-p3:0.29102,0.57178,0.73535,1.00000"
+                  "srgb:1.00000,1.00000,1.00000,0.72508",
+                  "display-p3:0.24670,0.49268,0.67725,0.79447"
                 ],
                 "orientation" : {
                   "start" : {
@@ -63,9 +80,16 @@
               }
             }
           ],
+          "glass" : true,
           "hidden" : false,
           "image-name" : "icon-removebg-preview-Picsart-AiImageEnhancer.png",
           "name" : "icon-removebg-preview-Picsart-AiImageEnhancer",
+          "opacity-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : 0.77
+            }
+          ],
           "position" : {
             "scale" : 1,
             "translation-in-points" : [

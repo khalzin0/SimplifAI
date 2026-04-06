@@ -665,15 +665,46 @@ struct MainContentView: View {
 
     private func historyCard(_ item: Item) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.sourceName)
-                        .font(.headline)
-                        .foregroundStyle(cardTextColor)
+            NavigationLink {
+                historyDetailView(for: item)
+            } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.sourceName)
+                            .font(.headline)
+                            .foregroundStyle(cardTextColor)
 
-                    Text(item.timestamp.formatted(date: .abbreviated, time: .shortened))
-                        .font(.footnote)
+                        Text(item.timestamp.formatted(date: .abbreviated, time: .shortened))
+                            .font(.footnote)
+                            .foregroundStyle(cardSecondaryTextColor)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(cardSecondaryTextColor)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Text(historyPreviewText(for: item))
+                .font(.subheadline)
+                .foregroundStyle(cardSecondaryTextColor)
+                .lineLimit(4)
+
+            HStack(spacing: 10) {
+                Button {
+                    useHistoryItem(item)
+                } label: {
+                    Label("Use Again", systemImage: "arrow.clockwise")
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .foregroundStyle(.white)
+                        .background(importButtonBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
 
                 Spacer()
@@ -681,32 +712,96 @@ struct MainContentView: View {
                 Button {
                     deleteHistoryItem(item)
                 } label: {
-                    Image(systemName: "trash")
+                    Label("Delete", systemImage: "trash")
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(cardSecondaryTextColor)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(primaryAccent.opacity(isDarkModeActive ? 0.12 : 0.08))
+                        )
                 }
                 .accessibilityLabel("Delete history item")
-            }
-
-            Text(item.summaryText)
-                .font(.subheadline)
-                .foregroundStyle(cardSecondaryTextColor)
-                .lineLimit(4)
-
-            Button {
-                useHistoryItem(item)
-            } label: {
-                Label("Use Again", systemImage: "arrow.clockwise")
-                    .fontWeight(.semibold)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .foregroundStyle(.white)
-                    .background(importButtonBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
         .background(editorBackground)
+    }
+
+    private func historyDetailView(for item: Item) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                contentPanel {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(item.sourceName)
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .foregroundStyle(cardTextColor)
+
+                        Text(item.timestamp.formatted(date: .complete, time: .shortened))
+                            .font(.subheadline)
+                            .foregroundStyle(cardSecondaryTextColor)
+                    }
+
+                    historyDetailSection(
+                        title: "Original Notes",
+                        detail: "\(wordCount(for: item.notesText)) words",
+                        text: item.notesText
+                    )
+
+                    historyDetailSection(
+                        title: "Summary",
+                        detail: "\(wordCount(for: item.summaryText)) words",
+                        text: formattedHistorySummaryText(for: item)
+                    )
+
+                    Button {
+                        useHistoryItem(item)
+                    } label: {
+                        Label("Use This Summary", systemImage: "arrow.clockwise")
+                            .fontWeight(.semibold)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 14)
+                            .foregroundStyle(.white)
+                            .background(importButtonBackground)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                }
+            }
+            .frame(maxWidth: contentWidth)
+            .padding(.horizontal, horizontalScreenPadding)
+            .padding(.vertical, verticalScreenPadding)
+        }
+        .navigationTitle("History Detail")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func historyDetailSection(title: String, detail: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(cardTextColor)
+
+                Spacer()
+
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(cardSecondaryTextColor)
+            }
+
+            ScrollView {
+                Text(text)
+                    .foregroundStyle(cardTextColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                    .padding(16)
+            }
+            .frame(minHeight: 180, maxHeight: 280)
+            .background(editorBackground)
+        }
     }
 
     private var appHeaderIcon: some View {
@@ -1157,6 +1252,26 @@ struct MainContentView: View {
             .split(whereSeparator: \.isNewline)
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+    }
+
+    private func historyPreviewText(for item: Item) -> String {
+        formattedHistorySummaryText(for: item)
+    }
+
+    private func formattedHistorySummaryText(for item: Item) -> String {
+        let lines = normalisedBulletLines(from: item.summaryText)
+
+        if lines.count > 1 {
+            return lines.map { "• \($0)" }.joined(separator: "\n")
+        }
+
+        return item.summaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func wordCount(for text: String) -> Int {
+        text
+            .split { $0.isWhitespace || $0.isNewline }
+            .count
     }
 }
 
