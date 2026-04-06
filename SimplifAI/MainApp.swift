@@ -34,6 +34,7 @@ struct MainContentView: View {
     @State private var importedPreviewText = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var animateBackground = false
     @FocusState private var isNotesEditorFocused: Bool
     
     private let primaryAccent = Color(red: 0.08, green: 0.36, blue: 0.67)
@@ -68,9 +69,6 @@ struct MainContentView: View {
                         headerSection
                         contentPanel {
                             importSection
-                            if !importedPreviewText.isEmpty {
-                                importedPreviewSection
-                            }
                             notesSection
                             summariseButton
                             if isLoading {
@@ -219,6 +217,9 @@ struct MainContentView: View {
             selection: $selectedPhotoItem,
             matching: .images
         )
+        .onAppear {
+            animateBackground = true
+        }
         .task(id: selectedPhotoItem) {
             await loadSelectedPhoto()
         }
@@ -281,20 +282,43 @@ struct MainContentView: View {
                     .fill(secondaryAccent.opacity(isDarkModeActive ? 0.18 : 0.22))
                     .frame(width: 320, height: 320)
                     .blur(radius: 36)
-                    .offset(x: 180, y: -250)
+                    .scaleEffect(animateBackground ? 1.08 : 0.94)
+                    .offset(
+                        x: animateBackground ? 190 : 150,
+                        y: animateBackground ? -250 : -220
+                    )
+                    .animation(
+                        .easeInOut(duration: 9).repeatForever(autoreverses: true),
+                        value: animateBackground
+                    )
 
                 Circle()
                     .fill(primaryAccent.opacity(isDarkModeActive ? 0.14 : 0.18))
                     .frame(width: 280, height: 280)
                     .blur(radius: 44)
-                    .offset(x: -170, y: 260)
+                    .scaleEffect(animateBackground ? 0.96 : 1.10)
+                    .offset(
+                        x: animateBackground ? -170 : -130,
+                        y: animateBackground ? 260 : 220
+                    )
+                    .animation(
+                        .easeInOut(duration: 11).repeatForever(autoreverses: true),
+                        value: animateBackground
+                    )
 
                 RoundedRectangle(cornerRadius: 80, style: .continuous)
                     .fill((isDarkModeActive ? Color.white : Color.white).opacity(isDarkModeActive ? 0.12 : 0.38))
                     .frame(width: 260, height: 260)
                     .blur(radius: 34)
-                    .rotationEffect(.degrees(18))
-                    .offset(x: -120, y: -140)
+                    .rotationEffect(.degrees(animateBackground ? 18 : 4))
+                    .offset(
+                        x: animateBackground ? -120 : -80,
+                        y: animateBackground ? -140 : -170
+                    )
+                    .animation(
+                        .easeInOut(duration: 13).repeatForever(autoreverses: true),
+                        value: animateBackground
+                    )
             }
         }
     }
@@ -422,33 +446,6 @@ struct MainContentView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var importedPreviewSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Imported Preview")
-                    .font(.headline)
-                    .foregroundStyle(cardTextColor)
-
-                Spacer()
-
-                Text("\(previewLineCount) lines")
-                    .font(.footnote)
-                    .foregroundStyle(cardSecondaryTextColor)
-            }
-
-            ScrollView {
-                Text(importedPreviewText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .foregroundStyle(cardTextColor)
-                    .textSelection(.enabled)
-                    .font(.callout)
-            }
-            .frame(maxWidth: .infinity, minHeight: 140, maxHeight: 220, alignment: .topLeading)
-            .padding()
-            .background(editorBackground)
-        }
-    }
-
     private var summaryOptionsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Summary Options")
@@ -485,31 +482,44 @@ struct MainContentView: View {
     private var notesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Notes")
+                Text(importedPreviewText.isEmpty ? "Notes" : "Preview")
                     .font(.headline)
                     .foregroundStyle(cardTextColor)
                 Spacer()
 
-                Text("\(currentWordCount)/\(maximumSummaryWordCount) words")
+                Text(importedPreviewText.isEmpty ? "\(currentWordCount)/\(maximumSummaryWordCount) words" : "\(previewWordCount) words")
                     .font(.footnote)
-                    .foregroundStyle(wordLimitExceeded ? .red : cardSecondaryTextColor)
+                    .foregroundStyle(importedPreviewText.isEmpty ? (wordLimitExceeded ? .red : cardSecondaryTextColor) : cardSecondaryTextColor)
             }
 
-            ZStack(alignment: .topLeading) {
-                if notesText.isEmpty {
-                    Text("Enter your notes here.")
-                        .foregroundStyle(cardSecondaryTextColor)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 20)
-                        .allowsHitTesting(false)
-                }
+            Group {
+                if importedPreviewText.isEmpty {
+                    ZStack(alignment: .topLeading) {
+                        if notesText.isEmpty {
+                            Text("Enter your notes here.")
+                                .foregroundStyle(cardSecondaryTextColor)
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 20)
+                                .allowsHitTesting(false)
+                        }
 
-                TextEditor(text: $notesText)
-                    .focused($isNotesEditorFocused)
-                    .scrollContentBackground(.hidden)
-                    .padding(12)
-                    .font(.body)
-                    .foregroundStyle(cardTextColor)
+                        TextEditor(text: $notesText)
+                            .focused($isNotesEditorFocused)
+                            .scrollContentBackground(.hidden)
+                            .padding(12)
+                            .font(.body)
+                            .foregroundStyle(cardTextColor)
+                    }
+                } else {
+                    ScrollView {
+                        Text(importedPreviewText)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .foregroundStyle(cardTextColor)
+                            .textSelection(.enabled)
+                            .font(.callout)
+                            .padding(16)
+                    }
+                }
             }
             .frame(minHeight: 220)
             .background(editorBackground)
@@ -572,11 +582,9 @@ struct MainContentView: View {
 
                 Spacer()
 
-                if !summaryBullets.isEmpty {
-                    Text("\(summaryBullets.count) bullets")
-                        .font(.footnote)
-                        .foregroundStyle(cardSecondaryTextColor)
-                }
+                Text("\(summaryWordCount) words")
+                    .font(.footnote)
+                    .foregroundStyle(cardSecondaryTextColor)
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -820,12 +828,16 @@ struct MainContentView: View {
         actionButtonBackground
     }
 
-    private var previewLineCount: Int {
-        importedPreviewText.split(whereSeparator: \.isNewline).count
+    private var previewWordCount: Int {
+        importedPreviewText.split { $0.isWhitespace || $0.isNewline }.count
     }
 
     private var currentWordCount: Int {
         notesText.split { $0.isWhitespace || $0.isNewline }.count
+    }
+
+    private var summaryWordCount: Int {
+        summaryBullets.joined(separator: " ").split { $0.isWhitespace || $0.isNewline }.count
     }
 
     private var wordLimitExceeded: Bool {
