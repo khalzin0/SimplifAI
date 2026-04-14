@@ -1,5 +1,7 @@
 # 📄 SimplifAI
 
+Check out the website: https://infosimplifai.com/
+
 **SimplifAI** is a clean and powerful iOS app that uses AI to turn long, complex text into short, clear, and easy-to-understand summaries.
 
 Designed for students, professionals, and everyday users, SimplifAI helps you quickly grasp key ideas without wasting time reading everything.
