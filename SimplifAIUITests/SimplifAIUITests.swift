@@ -1,10 +1,3 @@
-//
-//  KhalidUITests.swift
-//  KhalidUITests
-//
-//  Created by Khalid Alenizy on 02/04/2026.
-//
-
 import XCTest
 
 final class KhalidUITests: XCTestCase {
